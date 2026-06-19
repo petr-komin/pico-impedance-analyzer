@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QSpinBox, QGroupBox,
-    QStatusBar, QSplitter, QDockWidget, QTextEdit,
+    QStatusBar, QSplitter, QDockWidget, QTextEdit, QFrame,
 )
-from PySide6.QtCore import Qt, Signal, QObject, Slot
+from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
 from PySide6.QtGui import QTextCursor
 import pyqtgraph as pg
 from datetime import datetime
@@ -13,6 +13,7 @@ from core.measurement import Point, SweepResult
 from ui.freq_widget import FreqWidget
 
 LOG_MAX_LINES = 500
+RECONNECT_INTERVAL_MS = 3000
 
 
 class _Bridge(QObject):
@@ -30,9 +31,17 @@ class MainWindow(QMainWindow):
         self._device = Device(on_data=lambda d: self._bridge.data_received.emit(d))
         self._sweep: SweepResult | None = None
         self._sweep_point_count = 0
+        self._connected = False
+
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setInterval(RECONNECT_INTERVAL_MS)
+        self._reconnect_timer.timeout.connect(self._try_connect)
 
         self._build_ui()
         self._build_log_dock()
+
+        # auto-connect po vykresleni okna
+        QTimer.singleShot(300, self._try_connect)
 
     # ------------------------------------------------------------------
     # UI
@@ -44,7 +53,8 @@ class MainWindow(QMainWindow):
 
         ctrl = QVBoxLayout()
         ctrl.setAlignment(Qt.AlignTop)
-        ctrl.addWidget(self._build_connection_group())
+        ctrl.addWidget(self._build_status_bar())
+        ctrl.addWidget(self._build_port_settings())
         ctrl.addWidget(self._build_sweep_group())
         ctrl.addWidget(self._build_single_group())
         ctrl.addStretch()
@@ -58,14 +68,14 @@ class MainWindow(QMainWindow):
         self._plot_mag.setLabel("left", "dB")
         self._plot_mag.setLabel("bottom", "Frequency", units="Hz")
         self._plot_mag.showGrid(x=True, y=True)
-        self._plot_mag.setYRange(0, 60, padding=0)   # AD8302: 0–60 dB
+        self._plot_mag.setYRange(0, 60, padding=0)
         self._curve_mag = self._plot_mag.plot(pen=pg.mkPen("c", width=2))
 
         self._plot_phs = pg.PlotWidget(title="Phase (°)")
         self._plot_phs.setLabel("left", "°")
         self._plot_phs.setLabel("bottom", "Frequency", units="Hz")
         self._plot_phs.showGrid(x=True, y=True)
-        self._plot_phs.setYRange(0, 180, padding=0)  # AD8302: 0–180°
+        self._plot_phs.setYRange(0, 180, padding=0)
         self._curve_phs = self._plot_phs.plot(pen=pg.mkPen("y", width=2))
 
         splitter.addWidget(self._plot_mag)
@@ -76,7 +86,50 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter, stretch=1)
 
         self.setStatusBar(QStatusBar())
-        self.statusBar().showMessage("Odpojeno")
+        self.statusBar().showMessage("Hledám zařízení...")
+
+    def _build_status_bar(self):
+        frame = QFrame()
+        frame.setFrameShape(QFrame.StyledPanel)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(6, 4, 6, 4)
+
+        self._status_dot = QLabel("●")
+        self._status_dot.setFixedWidth(14)
+        self._status_lbl = QLabel("Odpojeno")
+
+        self._disconnect_btn = QPushButton("Odpojit")
+        self._disconnect_btn.setFixedWidth(70)
+        self._disconnect_btn.clicked.connect(self._manual_disconnect)
+        self._disconnect_btn.setVisible(False)
+
+        self._settings_btn = QPushButton("Port...")
+        self._settings_btn.setFixedWidth(55)
+        self._settings_btn.setCheckable(True)
+        self._settings_btn.clicked.connect(self._toggle_port_settings)
+
+        layout.addWidget(self._status_dot)
+        layout.addWidget(self._status_lbl, stretch=1)
+        layout.addWidget(self._disconnect_btn)
+        layout.addWidget(self._settings_btn)
+        self._set_connected_ui(False)
+        return frame
+
+    def _build_port_settings(self):
+        self._port_settings = QWidget()
+        self._port_settings.setVisible(False)
+        layout = QHBoxLayout(self._port_settings)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._port_combo = QComboBox()
+        refresh_btn = QPushButton("⟳")
+        refresh_btn.setFixedWidth(28)
+        refresh_btn.clicked.connect(self._refresh_ports)
+
+        layout.addWidget(self._port_combo, stretch=1)
+        layout.addWidget(refresh_btn)
+        self._refresh_ports()
+        return self._port_settings
 
     def _build_log_dock(self):
         self._log_edit = QTextEdit()
@@ -106,61 +159,13 @@ class MainWindow(QMainWindow):
 
         dock = QDockWidget("Log", self)
         dock.setWidget(container)
-        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetFloatable)
+        dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetClosable
+            | QDockWidget.DockWidgetFloatable
+        )
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         dock.setMinimumHeight(140)
-
-    def _log(self, text: str, color: str = "#e6edf3"):
-        # Trim old lines
-        doc = self._log_edit.document()
-        while doc.blockCount() > LOG_MAX_LINES:
-            cursor = QTextCursor(doc.begin())
-            cursor.select(QTextCursor.BlockUnderCursor)
-            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
-            cursor.removeSelectedText()
-
-        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        cursor = QTextCursor(doc)
-        cursor.movePosition(QTextCursor.End)
-        cursor.insertHtml(f'<span style="color:#555">[{ts}]</span> <span style="color:{color}">{text}</span><br>')
-        self._log_edit.setTextCursor(cursor)
-        self._log_edit.ensureCursorVisible()
-
-    def _log_tx(self, cmd: str):
-        self._log(f"&gt; {cmd}", color="#3fb950")  # green
-
-    def _log_rx(self, text: str, color: str = "#e6edf3"):
-        self._log(f"&lt; {text}", color=color)
-
-    # ------------------------------------------------------------------
-    # Control groups
-    # ------------------------------------------------------------------
-    def _build_connection_group(self):
-        grp = QGroupBox("Připojení")
-        layout = QVBoxLayout(grp)
-
-        row = QHBoxLayout()
-        self._port_combo = QComboBox()
-        self._refresh_btn = QPushButton("⟳")
-        self._refresh_btn.setFixedWidth(30)
-        self._refresh_btn.clicked.connect(self._refresh_ports)
-        row.addWidget(self._port_combo, stretch=1)
-        row.addWidget(self._refresh_btn)
-        layout.addLayout(row)
-
-        self._connect_btn = QPushButton("Připojit")
-        self._connect_btn.clicked.connect(self._toggle_connect)
-        layout.addWidget(self._connect_btn)
-
-        self._refresh_ports()
-        return grp
-
-    def _select_best_port(self):
-        best = Device.autodetect_port()
-        if best:
-            idx = self._port_combo.findText(best)
-            if idx >= 0:
-                self._port_combo.setCurrentIndex(idx)
 
     def _build_sweep_group(self):
         grp = QGroupBox("Sweep")
@@ -221,34 +226,96 @@ class MainWindow(QMainWindow):
         return grp
 
     # ------------------------------------------------------------------
-    # Slots
+    # Connection helpers
     # ------------------------------------------------------------------
+    def _set_connected_ui(self, connected: bool, port: str = ""):
+        self._connected = connected
+        if connected:
+            self._status_dot.setStyleSheet("color: #3fb950")
+            self._status_lbl.setText(port)
+            self._disconnect_btn.setVisible(True)
+            self._settings_btn.setVisible(False)
+            self._port_settings.setVisible(False)
+            self._settings_btn.setChecked(False)
+        else:
+            self._status_dot.setStyleSheet("color: #f85149")
+            self._status_lbl.setText("Odpojeno")
+            self._disconnect_btn.setVisible(False)
+            self._settings_btn.setVisible(True)
+
+        self._sweep_btn.setEnabled(connected)
+        self._set_freq_btn.setEnabled(connected)
+        self._measure_btn.setEnabled(connected)
+
+    def _try_connect(self):
+        if self._connected:
+            return
+        port = self._port_combo.currentText() if self._port_settings.isVisible() \
+               else Device.autodetect_port()
+        if not port:
+            self.statusBar().showMessage("Zařízení nenalezeno, zkouším znovu...")
+            self._reconnect_timer.start()
+            return
+        try:
+            self._device.connect(port)
+            self._set_connected_ui(True, port)
+            self._reconnect_timer.stop()
+            self.statusBar().showMessage(f"Připojeno: {port}")
+            self._log(f"Připojeno: {port}", color="#58a6ff")
+        except Exception as e:
+            self.statusBar().showMessage(f"Chyba připojení: {e}")
+            self._reconnect_timer.start()
+
+    def _manual_disconnect(self):
+        self._device.disconnect()
+        self._set_connected_ui(False)
+        self._reconnect_timer.stop()
+        self.statusBar().showMessage("Odpojeno ručně")
+        self._log("Odpojeno", color="#f85149")
+
+    def _toggle_port_settings(self, checked: bool):
+        self._port_settings.setVisible(checked)
+        if checked:
+            self._refresh_ports()
+
     def _refresh_ports(self):
         self._port_combo.clear()
         self._port_combo.addItems(Device.list_ports())
-        self._select_best_port()
+        best = Device.autodetect_port()
+        if best:
+            idx = self._port_combo.findText(best)
+            if idx >= 0:
+                self._port_combo.setCurrentIndex(idx)
 
-    def _toggle_connect(self):
-        if self._connect_btn.text() == "Připojit":
-            port = self._port_combo.currentText()
-            if not port:
-                return
-            self._device.connect(port)
-            self._connect_btn.setText("Odpojit")
-            self._sweep_btn.setEnabled(True)
-            self._set_freq_btn.setEnabled(True)
-            self._measure_btn.setEnabled(True)
-            self.statusBar().showMessage(f"Připojeno: {port}")
-            self._log(f"Připojeno: {port}", color="#58a6ff")
-        else:
-            self._device.disconnect()
-            self._connect_btn.setText("Připojit")
-            self._sweep_btn.setEnabled(False)
-            self._set_freq_btn.setEnabled(False)
-            self._measure_btn.setEnabled(False)
-            self.statusBar().showMessage("Odpojeno")
-            self._log("Odpojeno", color="#f85149")
+    # ------------------------------------------------------------------
+    # Log helpers
+    # ------------------------------------------------------------------
+    def _log(self, text: str, color: str = "#e6edf3"):
+        doc = self._log_edit.document()
+        while doc.blockCount() > LOG_MAX_LINES:
+            cursor = QTextCursor(doc.begin())
+            cursor.select(QTextCursor.BlockUnderCursor)
+            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
 
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        cursor = QTextCursor(doc)
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertHtml(
+            f'<span style="color:#555">[{ts}]</span> <span style="color:{color}">{text}</span><br>'
+        )
+        self._log_edit.setTextCursor(cursor)
+        self._log_edit.ensureCursorVisible()
+
+    def _log_tx(self, cmd: str):
+        self._log(f"&gt; {cmd}", color="#3fb950")
+
+    def _log_rx(self, text: str, color: str = "#e6edf3"):
+        self._log(f"&lt; {text}", color=color)
+
+    # ------------------------------------------------------------------
+    # Measurement slots
+    # ------------------------------------------------------------------
     def _start_sweep(self):
         self._sweep = SweepResult()
         self._sweep_point_count = 0
@@ -277,6 +344,10 @@ class MainWindow(QMainWindow):
             msg = data["error"]
             self.statusBar().showMessage(f"Chyba: {msg}")
             self._log_rx(f"CHYBA: {msg}", color="#f85149")
+            if msg == "serial disconnected":
+                self._set_connected_ui(False)
+                self._log("Zařízení odpojeno, zkouším znovu...", color="#f85149")
+                self._reconnect_timer.start()
             return
 
         if "ready" in data:
@@ -315,10 +386,10 @@ class MainWindow(QMainWindow):
                 self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
                 total = self._sweep_steps.value() + 1
                 self.statusBar().showMessage(f"Sweep: {self._sweep_point_count}/{total} bodů")
-                # log jen kazdy 10. bod aby nefloodilo
                 if self._sweep_point_count % 10 == 0:
                     self._log_rx(
-                        f"[{self._sweep_point_count}/{total}] {p.freq_hz} Hz  {p.magnitude_db:.1f} dB  {p.phase_deg:.1f}°",
+                        f"[{self._sweep_point_count}/{total}] {p.freq_hz} Hz  "
+                        f"{p.magnitude_db:.1f} dB  {p.phase_deg:.1f}°",
                         color="#8b949e",
                     )
             else:
