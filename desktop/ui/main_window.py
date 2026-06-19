@@ -170,6 +170,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         dock.setMinimumHeight(140)
 
+        menu = self.menuBar().addMenu("Zobrazení")
+        menu.addAction(dock.toggleViewAction())
+
     def _build_sweep_group(self):
         grp = QGroupBox("Sweep")
         layout = QVBoxLayout(grp)
