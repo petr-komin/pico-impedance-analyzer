@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self._plot_mag.setLabel("bottom", "Frequency", units="Hz")
         self._plot_mag.showGrid(x=True, y=True)
         self._plot_mag.setYRange(0, 60, padding=0)
-        self._curve_mag_ghost = self._plot_mag.plot(pen=pg.mkPen((0, 180, 180, 60), width=1))
+        self._curve_mag_ghost = self._plot_mag.plot(pen=pg.mkPen((0, 180, 180, 140), width=1))
         self._curve_mag       = self._plot_mag.plot(pen=pg.mkPen("c", width=2))
 
         self._plot_phs = pg.PlotWidget(title="Phase (°)")
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self._plot_phs.setLabel("bottom", "Frequency", units="Hz")
         self._plot_phs.showGrid(x=True, y=True)
         self._plot_phs.setYRange(0, 180, padding=0)
-        self._curve_phs_ghost = self._plot_phs.plot(pen=pg.mkPen((220, 180, 0, 60), width=1))
+        self._curve_phs_ghost = self._plot_phs.plot(pen=pg.mkPen((220, 180, 0, 140), width=1))
         self._curve_phs       = self._plot_phs.plot(pen=pg.mkPen("y", width=2))
 
         splitter.addWidget(self._plot_mag)
