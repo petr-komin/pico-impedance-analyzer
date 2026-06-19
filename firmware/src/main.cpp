@@ -4,11 +4,11 @@
 #include "AD9851.h"
 #include "protocol.h"
 
-// AD9851 pins (SPI bit-bang)
-#define DDS_DATA_PIN  19
-#define DDS_CLK_PIN   18
-#define DDS_FQ_UD_PIN 17
-#define DDS_RESET_PIN 16
+// AD9851 pins (SPI bit-bang) — Waveshare RP2040-Zero
+#define DDS_DATA_PIN   8
+#define DDS_CLK_PIN    9
+#define DDS_FQ_UD_PIN 10
+#define DDS_RESET_PIN 11
 
 // ADS1115
 #define ADS_ADDR  0x48
