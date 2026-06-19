@@ -248,10 +248,12 @@ class MainWindow(QMainWindow):
     def _start_sweep(self):
         self._sweep = SweepResult()
         self._sweep_point_count = 0
-        steps = self._sweep_steps.value()
+        steps    = self._sweep_steps.value()
         start_hz = self._sweep_start.hz()
         stop_hz  = self._sweep_stop.hz()
         dwell    = self._sweep_dwell.value()
+        self._plot_mag.setXRange(start_hz, stop_hz, padding=0)
+        self._plot_phs.setXRange(start_hz, stop_hz, padding=0)
         self._log_tx(f"SWEEP {start_hz} {stop_hz} {steps} {dwell}")
         self._device.sweep(start_hz, stop_hz, steps, dwell)
         self.statusBar().showMessage("Sweep probíhá...")
@@ -293,8 +295,6 @@ class MainWindow(QMainWindow):
             if self._sweep and n > 0:
                 self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
                 self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
-                self._plot_mag.enableAutoRange(axis=pg.ViewBox.XAxis)
-                self._plot_phs.enableAutoRange(axis=pg.ViewBox.XAxis)
             self._sweep = None
             return
 
