@@ -1,5 +1,9 @@
 .claude/
 firmware/.pio/
+firmware/.idea/
 desktop/__pycache__/
+desktop/**/__pycache__/
 desktop/*.pyc
 desktop/.venv/
+desktop/To
+desktop/sys
