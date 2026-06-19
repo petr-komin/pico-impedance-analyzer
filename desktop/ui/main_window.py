@@ -4,12 +4,13 @@ from PySide6.QtWidgets import (
     QStatusBar, QSplitter, QDockWidget, QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal, QObject, Slot
-from PySide6.QtGui import QTextCursor, QColor
+from PySide6.QtGui import QTextCursor
 import pyqtgraph as pg
 from datetime import datetime
 
 from core.device import Device
 from core.measurement import Point, SweepResult
+from ui.freq_widget import FreqWidget
 
 LOG_MAX_LINES = 500
 
@@ -163,19 +164,13 @@ class MainWindow(QMainWindow):
         grp = QGroupBox("Sweep")
         layout = QVBoxLayout(grp)
 
-        def hz_spin(default, max_val=70_000_000):
-            w = QSpinBox()
-            w.setRange(1, max_val)
-            w.setValue(default)
-            w.setSingleStep(10_000)
-            w.setSuffix(" Hz")
-            return w
+        self._sweep_start = FreqWidget(default_hz=100_000)
+        self._sweep_stop  = FreqWidget(default_hz=10_000_000)
 
-        self._sweep_start = hz_spin(100_000)
-        self._sweep_stop  = hz_spin(10_000_000)
         self._sweep_steps = QSpinBox()
         self._sweep_steps.setRange(2, 2000)
         self._sweep_steps.setValue(200)
+
         self._sweep_dwell = QSpinBox()
         self._sweep_dwell.setRange(1, 5000)
         self._sweep_dwell.setValue(5)
@@ -200,12 +195,9 @@ class MainWindow(QMainWindow):
         grp = QGroupBox("Jednorázové měření")
         layout = QVBoxLayout(grp)
 
-        self._freq_spin = QSpinBox()
-        self._freq_spin.setRange(1, 70_000_000)
-        self._freq_spin.setValue(1_000_000)
-        self._freq_spin.setSuffix(" Hz")
+        self._freq_widget = FreqWidget(default_hz=1_000_000)
         layout.addWidget(QLabel("Frekvence"))
-        layout.addWidget(self._freq_spin)
+        layout.addWidget(self._freq_widget)
 
         self._set_freq_btn = QPushButton("Nastavit frekvenci")
         self._set_freq_btn.clicked.connect(self._set_freq)
@@ -255,20 +247,17 @@ class MainWindow(QMainWindow):
         self._sweep = SweepResult()
         self._sweep_point_count = 0
         steps = self._sweep_steps.value()
-        cmd = f"SWEEP {self._sweep_start.value()} {self._sweep_stop.value()} {steps} {self._sweep_dwell.value()}"
-        self._log_tx(cmd)
-        self._device.sweep(
-            self._sweep_start.value(),
-            self._sweep_stop.value(),
-            steps,
-            self._sweep_dwell.value(),
-        )
+        start_hz = self._sweep_start.hz()
+        stop_hz  = self._sweep_stop.hz()
+        dwell    = self._sweep_dwell.value()
+        self._log_tx(f"SWEEP {start_hz} {stop_hz} {steps} {dwell}")
+        self._device.sweep(start_hz, stop_hz, steps, dwell)
         self.statusBar().showMessage("Sweep probíhá...")
 
     def _set_freq(self):
-        cmd = f"FREQ {self._freq_spin.value()}"
-        self._log_tx(cmd)
-        self._device.set_frequency(self._freq_spin.value())
+        hz = self._freq_widget.hz()
+        self._log_tx(f"FREQ {hz}")
+        self._device.set_frequency(hz)
 
     def _single_measure(self):
         self._log_tx("MEASURE")
