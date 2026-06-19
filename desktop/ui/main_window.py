@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Hledám zařízení...")
+        self._set_connected_ui(False)  # vsechny widgety uz existuji
 
     def _build_status_bar(self):
         frame = QFrame()
@@ -112,7 +113,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._status_lbl, stretch=1)
         layout.addWidget(self._disconnect_btn)
         layout.addWidget(self._settings_btn)
-        self._set_connected_ui(False)
+        # nezavolame _set_connected_ui zde — _sweep_btn jeste neexistuje
+        self._status_dot.setStyleSheet("color: #f85149")
+        self._disconnect_btn.setVisible(False)
         return frame
 
     def _build_port_settings(self):
