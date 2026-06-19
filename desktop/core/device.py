@@ -18,6 +18,20 @@ class Device:
     def list_ports() -> list[str]:
         return [p.device for p in serial.tools.list_ports.comports()]
 
+    @staticmethod
+    def autodetect_port() -> Optional[str]:
+        ports = list(serial.tools.list_ports.comports())
+        # 1. Raspberry Pi VID (RP2040 USB CDC)
+        for p in ports:
+            if p.vid == 0x2E8A:
+                return p.device
+        # 2. First ttyACM* (Linux CDC device)
+        for p in ports:
+            if "ttyACM" in p.device:
+                return p.device
+        # 3. First available
+        return ports[0].device if ports else None
+
     def connect(self, port: str, baud: int = 115200) -> None:
         self._port = serial.Serial(port, baud, timeout=1)
         self._running = True

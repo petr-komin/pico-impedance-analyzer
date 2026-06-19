@@ -92,6 +92,13 @@ class MainWindow(QMainWindow):
         self._refresh_ports()
         return grp
 
+    def _select_best_port(self):
+        best = Device.autodetect_port()
+        if best:
+            idx = self._port_combo.findText(best)
+            if idx >= 0:
+                self._port_combo.setCurrentIndex(idx)
+
     def _build_sweep_group(self):
         grp = QGroupBox("Sweep")
         layout = QVBoxLayout(grp)
@@ -161,6 +168,7 @@ class MainWindow(QMainWindow):
     def _refresh_ports(self):
         self._port_combo.clear()
         self._port_combo.addItems(Device.list_ports())
+        self._select_best_port()
 
     def _toggle_connect(self):
         if self._connect_btn.text() == "Připojit":
