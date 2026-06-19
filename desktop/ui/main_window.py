@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QSpinBox, QGroupBox,
-    QStatusBar, QSplitter, QDockWidget, QTextEdit, QFrame,
+    QStatusBar, QSplitter, QDockWidget, QTextEdit, QFrame, QCheckBox,
 )
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
 from PySide6.QtGui import QTextCursor
@@ -199,10 +199,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Prodleva"))
         layout.addWidget(self._sweep_dwell)
 
+        self._repeat_chk = QCheckBox("Opakovat")
+        self._repeat_chk.setToolTip("Po dokončení sweepnu spustí další automaticky")
+
+        row = QHBoxLayout()
         self._sweep_btn = QPushButton("Spustit sweep")
         self._sweep_btn.clicked.connect(self._start_sweep)
         self._sweep_btn.setEnabled(False)
-        layout.addWidget(self._sweep_btn)
+        row.addWidget(self._sweep_btn, stretch=1)
+        row.addWidget(self._repeat_chk)
+        layout.addLayout(row)
         return grp
 
     def _build_single_group(self):
@@ -368,12 +374,15 @@ class MainWindow(QMainWindow):
 
         if "sweep_done" in data:
             n = len(self._sweep.points) if self._sweep else 0
-            self.statusBar().showMessage(f"Sweep hotov ({n} bodů)")
-            self._log_rx(f"sweep_done — {n} bodů nasbíráno", color="#e3b341")
+            self._log_rx(f"sweep_done — {n} bodů", color="#e3b341")
             if self._sweep and n > 0:
                 self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
                 self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
             self._sweep = None
+            if self._repeat_chk.isChecked():
+                self._start_sweep()
+            else:
+                self.statusBar().showMessage(f"Sweep hotov ({n} bodů)")
             return
 
         if "freq" in data and "vmag" in data:
