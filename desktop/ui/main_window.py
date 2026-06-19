@@ -58,12 +58,14 @@ class MainWindow(QMainWindow):
         self._plot_mag.setLabel("left", "dB")
         self._plot_mag.setLabel("bottom", "Frequency", units="Hz")
         self._plot_mag.showGrid(x=True, y=True)
+        self._plot_mag.setYRange(0, 60, padding=0)   # AD8302: 0–60 dB
         self._curve_mag = self._plot_mag.plot(pen=pg.mkPen("c", width=2))
 
         self._plot_phs = pg.PlotWidget(title="Phase (°)")
-        self._plot_phs.setLabel("left", "Degree")
+        self._plot_phs.setLabel("left", "°")
         self._plot_phs.setLabel("bottom", "Frequency", units="Hz")
         self._plot_phs.showGrid(x=True, y=True)
+        self._plot_phs.setYRange(0, 180, padding=0)  # AD8302: 0–180°
         self._curve_phs = self._plot_phs.plot(pen=pg.mkPen("y", width=2))
 
         splitter.addWidget(self._plot_mag)
@@ -291,8 +293,8 @@ class MainWindow(QMainWindow):
             if self._sweep and n > 0:
                 self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
                 self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
-                self._plot_mag.autoRange()
-                self._plot_phs.autoRange()
+                self._plot_mag.enableAutoRange(axis=pg.ViewBox.XAxis)
+                self._plot_phs.enableAutoRange(axis=pg.ViewBox.XAxis)
             self._sweep = None
             return
 
