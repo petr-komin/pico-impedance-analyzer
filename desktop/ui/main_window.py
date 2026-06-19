@@ -174,9 +174,13 @@ class MainWindow(QMainWindow):
         self._sweep_steps.setValue(200)
 
         self._sweep_dwell = QSpinBox()
-        self._sweep_dwell.setRange(1, 5000)
-        self._sweep_dwell.setValue(5)
+        self._sweep_dwell.setRange(5, 5000)
+        self._sweep_dwell.setValue(10)
         self._sweep_dwell.setSuffix(" ms")
+        self._sweep_dwell.setToolTip(
+            "Min 5 ms — ADS1115 @ 128 SPS přidá vždy ~16 ms/krok.\n"
+            "LC s vysokým Q: doporučeno 20–100 ms."
+        )
 
         layout.addWidget(QLabel("Start"))
         layout.addWidget(self._sweep_start)
