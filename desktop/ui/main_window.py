@@ -32,6 +32,9 @@ class MainWindow(QMainWindow):
         self._sweep: SweepResult | None = None
         self._sweep_point_count = 0
         self._connected = False
+        self._prev_freqs = None
+        self._prev_mag   = None
+        self._prev_phs   = None
 
         self._reconnect_timer = QTimer(self)
         self._reconnect_timer.setInterval(RECONNECT_INTERVAL_MS)
@@ -331,12 +334,17 @@ class MainWindow(QMainWindow):
     # Measurement slots
     # ------------------------------------------------------------------
     def _start_sweep(self):
-        # stara data presun do ghost
+        # uloz stara data pro postupne mazani ghostu
         old_x, old_y = self._curve_mag.getData()
         if old_x is not None and len(old_x) > 0:
+            self._prev_freqs = old_x
+            self._prev_mag   = old_y
+            _, old_y_phs = self._curve_phs.getData()
+            self._prev_phs = old_y_phs
             self._curve_mag_ghost.setData(old_x, old_y)
-            old_x, old_y = self._curve_phs.getData()
-            self._curve_phs_ghost.setData(old_x, old_y)
+            self._curve_phs_ghost.setData(old_x, old_y_phs)
+        else:
+            self._prev_freqs = self._prev_mag = self._prev_phs = None
         self._curve_mag.setData([], [])
         self._curve_phs.setData([], [])
 
@@ -412,6 +420,15 @@ class MainWindow(QMainWindow):
                 self._sweep_point_count += 1
                 self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
                 self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
+                # ghost orizni od aktualniho indexu dopredu
+                if self._prev_freqs is not None:
+                    i = self._sweep_point_count
+                    if i < len(self._prev_freqs):
+                        self._curve_mag_ghost.setData(self._prev_freqs[i:], self._prev_mag[i:])
+                        self._curve_phs_ghost.setData(self._prev_freqs[i:], self._prev_phs[i:])
+                    else:
+                        self._curve_mag_ghost.setData([], [])
+                        self._curve_phs_ghost.setData([], [])
                 total = self._sweep_steps.value() + 1
                 self.statusBar().showMessage(f"Sweep: {self._sweep_point_count}/{total} bodů")
                 if self._sweep_point_count % 10 == 0:
