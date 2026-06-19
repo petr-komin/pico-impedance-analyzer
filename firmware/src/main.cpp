@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <ADS1115_WE.h>
+#include <cstdarg>
 #include "AD9851.h"
 #include "protocol.h"
 
@@ -16,8 +17,8 @@
 AD9851 dds(DDS_DATA_PIN, DDS_CLK_PIN, DDS_FQ_UD_PIN, DDS_RESET_PIN);
 ADS1115_WE adc(ADS_ADDR);
 
-static uint32_t currentFreq = 1000000UL;
-static uint8_t  adsGain = ADS1115_RANGE_2048;
+static uint32_t   currentFreq = 1000000UL;
+static ADS1115_RANGE adsGain  = ADS1115_RANGE_2048;
 
 // snprintf helper — mbed Arduino nema Serial.printf()
 static void serialPrintf(const char *fmt, ...) {
@@ -105,9 +106,9 @@ void handleCommand(const char *line) {
     } else if (strcmp(cmd, "GAIN") == 0) {
         int g = 2;
         sscanf(line, "GAIN %d", &g);
-        const uint8_t gains[] = {
+        const ADS1115_RANGE gains[] = {
             ADS1115_RANGE_6144, ADS1115_RANGE_4096, ADS1115_RANGE_2048,
-            ADS1115_RANGE_1024, ADS1115_RANGE_512,  ADS1115_RANGE_256
+            ADS1115_RANGE_1024, ADS1115_RANGE_0512, ADS1115_RANGE_0256
         };
         if (g >= 0 && g <= 5) {
             adsGain = gains[g];
