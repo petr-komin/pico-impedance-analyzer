@@ -1,14 +1,17 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QSpinBox, QGroupBox,
-    QStatusBar, QDoubleSpinBox, QSplitter,
+    QStatusBar, QSplitter, QDockWidget, QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal, QObject, Slot
+from PySide6.QtGui import QTextCursor, QColor
 import pyqtgraph as pg
-import numpy as np
+from datetime import datetime
 
 from core.device import Device
 from core.measurement import Point, SweepResult
+
+LOG_MAX_LINES = 500
 
 
 class _Bridge(QObject):
@@ -19,14 +22,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pico Impedance Analyzer")
-        self.resize(1100, 700)
+        self.resize(1200, 750)
 
         self._bridge = _Bridge()
         self._bridge.data_received.connect(self._on_data)
         self._device = Device(on_data=lambda d: self._bridge.data_received.emit(d))
         self._sweep: SweepResult | None = None
+        self._sweep_point_count = 0
 
         self._build_ui()
+        self._build_log_dock()
 
     # ------------------------------------------------------------------
     # UI
@@ -36,7 +41,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
 
-        # Left panel — controls
         ctrl = QVBoxLayout()
         ctrl.setAlignment(Qt.AlignTop)
         ctrl.addWidget(self._build_connection_group())
@@ -48,7 +52,6 @@ class MainWindow(QMainWindow):
         left.setFixedWidth(280)
         left.setLayout(ctrl)
 
-        # Right panel — plots
         splitter = QSplitter(Qt.Vertical)
         self._plot_mag = pg.PlotWidget(title="Magnitude (dB)")
         self._plot_mag.setLabel("left", "dB")
@@ -72,6 +75,63 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Odpojeno")
 
+    def _build_log_dock(self):
+        self._log_edit = QTextEdit()
+        self._log_edit.setReadOnly(True)
+        self._log_edit.setLineWrapMode(QTextEdit.NoWrap)
+        self._log_edit.setStyleSheet(
+            "QTextEdit { background: #0d1117; color: #e6edf3; font-family: monospace; font-size: 11px; }"
+        )
+
+        clear_btn = QPushButton("Vymazat")
+        clear_btn.setFixedWidth(80)
+        clear_btn.clicked.connect(self._log_edit.clear)
+
+        bar = QWidget()
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(4, 2, 4, 2)
+        bar_layout.addWidget(QLabel("Komunikace"))
+        bar_layout.addStretch()
+        bar_layout.addWidget(clear_btn)
+
+        container = QWidget()
+        vl = QVBoxLayout(container)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(0)
+        vl.addWidget(bar)
+        vl.addWidget(self._log_edit)
+
+        dock = QDockWidget("Log", self)
+        dock.setWidget(container)
+        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.BottomDockWidgetArea, dock)
+        dock.setMinimumHeight(140)
+
+    def _log(self, text: str, color: str = "#e6edf3"):
+        # Trim old lines
+        doc = self._log_edit.document()
+        while doc.blockCount() > LOG_MAX_LINES:
+            cursor = QTextCursor(doc.begin())
+            cursor.select(QTextCursor.BlockUnderCursor)
+            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        cursor = QTextCursor(doc)
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertHtml(f'<span style="color:#555">[{ts}]</span> <span style="color:{color}">{text}</span><br>')
+        self._log_edit.setTextCursor(cursor)
+        self._log_edit.ensureCursorVisible()
+
+    def _log_tx(self, cmd: str):
+        self._log(f"&gt; {cmd}", color="#3fb950")  # green
+
+    def _log_rx(self, text: str, color: str = "#e6edf3"):
+        self._log(f"&lt; {text}", color=color)
+
+    # ------------------------------------------------------------------
+    # Control groups
+    # ------------------------------------------------------------------
     def _build_connection_group(self):
         grp = QGroupBox("Připojení")
         layout = QVBoxLayout(grp)
@@ -181,6 +241,7 @@ class MainWindow(QMainWindow):
             self._set_freq_btn.setEnabled(True)
             self._measure_btn.setEnabled(True)
             self.statusBar().showMessage(f"Připojeno: {port}")
+            self._log(f"Připojeno: {port}", color="#58a6ff")
         else:
             self._device.disconnect()
             self._connect_btn.setText("Připojit")
@@ -188,46 +249,81 @@ class MainWindow(QMainWindow):
             self._set_freq_btn.setEnabled(False)
             self._measure_btn.setEnabled(False)
             self.statusBar().showMessage("Odpojeno")
+            self._log("Odpojeno", color="#f85149")
 
     def _start_sweep(self):
         self._sweep = SweepResult()
+        self._sweep_point_count = 0
+        steps = self._sweep_steps.value()
+        cmd = f"SWEEP {self._sweep_start.value()} {self._sweep_stop.value()} {steps} {self._sweep_dwell.value()}"
+        self._log_tx(cmd)
         self._device.sweep(
             self._sweep_start.value(),
             self._sweep_stop.value(),
-            self._sweep_steps.value(),
+            steps,
             self._sweep_dwell.value(),
         )
         self.statusBar().showMessage("Sweep probíhá...")
 
     def _set_freq(self):
+        cmd = f"FREQ {self._freq_spin.value()}"
+        self._log_tx(cmd)
         self._device.set_frequency(self._freq_spin.value())
 
     def _single_measure(self):
+        self._log_tx("MEASURE")
         self._device.measure()
 
     @Slot(dict)
     def _on_data(self, data: dict):
         if "error" in data:
-            self.statusBar().showMessage(f"Chyba: {data['error']}")
+            msg = data["error"]
+            self.statusBar().showMessage(f"Chyba: {msg}")
+            self._log_rx(f"CHYBA: {msg}", color="#f85149")
             return
+
         if "ready" in data:
             self.statusBar().showMessage("Zařízení připraveno")
+            self._log_rx(str(data), color="#58a6ff")
             return
+
+        if "i2c_scan" in data:
+            self._log_rx(str(data), color="#d2a8ff")
+            return
+
+        if "sweep_start" in data:
+            self._log_rx(str(data), color="#e3b341")
+            return
+
         if "sweep_done" in data:
-            self.statusBar().showMessage(f"Sweep hotov ({len(self._sweep.points)} bodů)")
+            n = len(self._sweep.points) if self._sweep else 0
+            self.statusBar().showMessage(f"Sweep hotov ({n} bodů)")
+            self._log_rx(f"sweep_done — {n} bodů", color="#e3b341")
+            self._sweep = None
             return
+
         if "freq" in data and "vmag" in data:
             p = Point(
                 freq_hz=int(data["freq"]),
                 vmag_v=float(data["vmag"]),
                 vphs_v=float(data["vphs"]),
             )
-            if self._sweep is not None and not data.get("sweep_start"):
+            if self._sweep is not None:
                 self._sweep.append(p)
-                freqs = self._sweep.frequencies
-                self._curve_mag.setData(freqs, self._sweep.magnitudes_db)
-                self._curve_phs.setData(freqs, self._sweep.phases_deg)
+                self._sweep_point_count += 1
+                self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
+                self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
+                total = self._sweep_steps.value() + 1
+                self.statusBar().showMessage(f"Sweep: {self._sweep_point_count}/{total} bodů")
+                # log jen kazdy 10. bod aby nefloodilo
+                if self._sweep_point_count % 10 == 0:
+                    self._log_rx(
+                        f"[{self._sweep_point_count}/{total}] {p.freq_hz} Hz  {p.magnitude_db:.1f} dB  {p.phase_deg:.1f}°",
+                        color="#8b949e",
+                    )
             else:
-                self._result_lbl.setText(
-                    f"{p.magnitude_db:.1f} dB  /  {p.phase_deg:.1f}°"
-                )
+                self._result_lbl.setText(f"{p.magnitude_db:.1f} dB  /  {p.phase_deg:.1f}°")
+                self._log_rx(f"{p.freq_hz} Hz  {p.magnitude_db:.1f} dB  {p.phase_deg:.1f}°")
+
+        if "pong" in data:
+            self._log_rx("pong", color="#58a6ff")
