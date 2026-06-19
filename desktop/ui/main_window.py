@@ -298,7 +298,12 @@ class MainWindow(QMainWindow):
         if "sweep_done" in data:
             n = len(self._sweep.points) if self._sweep else 0
             self.statusBar().showMessage(f"Sweep hotov ({n} bodů)")
-            self._log_rx(f"sweep_done — {n} bodů", color="#e3b341")
+            self._log_rx(f"sweep_done — {n} bodů nasbíráno", color="#e3b341")
+            if self._sweep and n > 0:
+                self._curve_mag.setData(self._sweep.frequencies, self._sweep.magnitudes_db)
+                self._curve_phs.setData(self._sweep.frequencies, self._sweep.phases_deg)
+                self._plot_mag.autoRange()
+                self._plot_phs.autoRange()
             self._sweep = None
             return
 
