@@ -33,7 +33,7 @@ public:
         sendByte((ftw >> 8) & 0xFF);
         sendByte((ftw >> 16) & 0xFF);
         sendByte((ftw >> 24) & 0xFF);
-        sendByte((phase & 0x1F) << 3); // control word: REFCLK x6 off, phase bits
+        sendByte(0x01 | ((phase & 0x1F) << 3)); // bit0=REFCLK x6 (30MHz*6=180MHz), bits7:3=phase
         pulse(_fqud);
     }
 
