@@ -1,3 +1,4 @@
+.claude/
 firmware/.pio/
 desktop/__pycache__/
 desktop/*.pyc
