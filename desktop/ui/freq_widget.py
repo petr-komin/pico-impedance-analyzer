@@ -1,6 +1,5 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QDoubleSpinBox, QComboBox
 
-# AD9851 s 180 MHz krystalem (x6 PLL)
 DDS_MAX_HZ = 70_000_000
 
 _UNITS = {
@@ -42,30 +41,44 @@ class FreqWidget(QWidget):
         layout.addWidget(self._spin, stretch=1)
         layout.addWidget(self._unit)
 
+        # ulozena Hz hodnota — aktualizuje se pri zmene spinboxu,
+        # pouziva se pri zmene jednotky (combo uz ukazuje novou jednotku)
+        self._hz = default_hz
+
         self._unit.setCurrentText("kHz")
         self._apply_unit("kHz")
-        self.set_hz(default_hz)
+        self._spin.setValue(default_hz / _UNITS["kHz"])
 
+        self._spin.valueChanged.connect(self._on_value_changed)
         self._unit.currentTextChanged.connect(self._on_unit_changed)
 
     # ------------------------------------------------------------------
     def hz(self) -> int:
-        mult = _UNITS[self._unit.currentText()]
-        return max(1, min(DDS_MAX_HZ, round(self._spin.value() * mult)))
+        return self._hz
 
     def set_hz(self, value_hz: int):
+        self._hz = max(1, min(DDS_MAX_HZ, value_hz))
         mult = _UNITS[self._unit.currentText()]
-        self._spin.setValue(value_hz / mult)
+        self._spin.blockSignals(True)
+        self._spin.setValue(self._hz / mult)
+        self._spin.blockSignals(False)
 
     # ------------------------------------------------------------------
     def _apply_unit(self, unit: str):
         mult = _UNITS[unit]
+        self._spin.blockSignals(True)
         self._spin.setMaximum(DDS_MAX_HZ / mult)
         self._spin.setSingleStep(_STEP[unit])
         self._spin.setDecimals(_DECIMALS[unit])
         self._spin.setSuffix(f" {unit}")
+        self._spin.blockSignals(False)
+
+    def _on_value_changed(self, value: float):
+        mult = _UNITS[self._unit.currentText()]
+        self._hz = max(1, min(DDS_MAX_HZ, round(value * mult)))
 
     def _on_unit_changed(self, unit: str):
-        hz = self.hz()           # uloz aktualni Hz hodnotu
+        # _hz je ulozena pred zmenou jednotky — pouzijeme ji primo
+        saved_hz = self._hz
         self._apply_unit(unit)
-        self.set_hz(hz)          # prepocitej do nove jednotky
+        self.set_hz(saved_hz)
