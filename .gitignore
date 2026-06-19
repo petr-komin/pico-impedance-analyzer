@@ -1,0 +1,4 @@
+firmware/.pio/
+desktop/__pycache__/
+desktop/*.pyc
+desktop/.venv/
