@@ -62,6 +62,9 @@ class Device:
     def set_gain(self, gain: int) -> None:
         self.send(f"GAIN {gain}")
 
+    def set_range(self, range_idx: int) -> None:
+        self.send(f"RANGE {range_idx}")
+
     def _reader(self) -> None:
         while self._running:
             try:

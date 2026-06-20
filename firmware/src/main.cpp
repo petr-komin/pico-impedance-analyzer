@@ -14,11 +14,25 @@
 // ADS1115 — Wire/I2C0 defaultne pouziva GP4 (SDA) + GP5 (SCL) na Pico
 #define ADS_ADDR  0x48
 
+// Prepinani referencniho rezistoru (rele, one-hot — vzdy sepnuto jen jedno)
+#define RANGE0_PIN 12   // Rref rozsah 0
+#define RANGE1_PIN 13   // Rref rozsah 1
+#define RANGE2_PIN 14   // Rref rozsah 2
+
 AD9851 dds(DDS_DATA_PIN, DDS_CLK_PIN, DDS_FQ_UD_PIN, DDS_RESET_PIN);
 ADS1115_WE adc(ADS_ADDR);
 
 static uint32_t   currentFreq = 1000000UL;
 static ADS1115_RANGE adsGain  = ADS1115_RANGE_2048;
+static uint8_t    currentRange = 0;
+
+void setRange(uint8_t r) {
+    if (r > 2) return;
+    currentRange = r;
+    digitalWrite(RANGE0_PIN, r == 0 ? HIGH : LOW);
+    digitalWrite(RANGE1_PIN, r == 1 ? HIGH : LOW);
+    digitalWrite(RANGE2_PIN, r == 2 ? HIGH : LOW);
+}
 
 // snprintf helper — mbed Arduino nema Serial.printf()
 static void serialPrintf(const char *fmt, ...) {
@@ -46,8 +60,9 @@ float readChannel(ADS1115_MUX ch) {
     return adc.getResult_V();
 }
 
-void measure(float &vmag, float &vphs) {
-    vmag = readChannel(ADS1115_COMP_0_GND); // A0 = VMAG
+void measure(float &vmag, float &vref, float &vphs) {
+    vmag = readChannel(ADS1115_COMP_3_GND); // A3 = VMAG
+    vref = readChannel(ADS1115_COMP_2_GND); // A2 = VREF
     vphs = readChannel(ADS1115_COMP_1_GND); // A1 = VPHS
 }
 
@@ -79,10 +94,10 @@ void handleCommand(const char *line) {
         serialPrintf("{\"ok\":true,\"freq\":%lu}\n", currentFreq);
 
     } else if (strcmp(cmd, "MEASURE") == 0) {
-        float vmag, vphs;
-        measure(vmag, vphs);
-        serialPrintf("{\"freq\":%lu,\"vmag\":%.4f,\"vphs\":%.4f}\n",
-                     currentFreq, vmag, vphs);
+        float vmag, vref, vphs;
+        measure(vmag, vref, vphs);
+        serialPrintf("{\"freq\":%lu,\"vmag\":%.4f,\"vref\":%.4f,\"vphs\":%.4f}\n",
+                     currentFreq, vmag, vref, vphs);
 
     } else if (strcmp(cmd, "SWEEP") == 0) {
         uint32_t fStart, fStop, steps, dwell;
@@ -95,10 +110,10 @@ void handleCommand(const char *line) {
             uint32_t f = fStart + (uint32_t)((uint64_t)(fStop - fStart) * i / steps);
             dds.setFrequency(f);
             delay(dwell);
-            float vmag, vphs;
-            measure(vmag, vphs);
-            serialPrintf("{\"i\":%lu,\"freq\":%lu,\"vmag\":%.4f,\"vphs\":%.4f}\n",
-                         i, f, vmag, vphs);
+            float vmag, vref, vphs;
+            measure(vmag, vref, vphs);
+            serialPrintf("{\"i\":%lu,\"freq\":%lu,\"vmag\":%.4f,\"vref\":%.4f,\"vphs\":%.4f}\n",
+                         i, f, vmag, vref, vphs);
         }
         currentFreq = fStop;
         Serial.println("{\"sweep_done\":true}");
@@ -116,6 +131,12 @@ void handleCommand(const char *line) {
         }
         serialPrintf("{\"ok\":true,\"gain\":%d}\n", g);
 
+    } else if (strcmp(cmd, "RANGE") == 0) {
+        int r = 0;
+        sscanf(line, "RANGE %d", &r);
+        setRange((uint8_t)r);
+        serialPrintf("{\"ok\":true,\"range\":%u}\n", currentRange);
+
     } else if (strcmp(cmd, "SCAN") == 0) {
         i2cScan();
 
@@ -129,6 +150,10 @@ void handleCommand(const char *line) {
 
 void setup() {
     Serial.begin(115200);
+    pinMode(RANGE0_PIN, OUTPUT);
+    pinMode(RANGE1_PIN, OUTPUT);
+    pinMode(RANGE2_PIN, OUTPUT);
+    setRange(0);
     Wire.begin(); // I2C0: GP4=SDA, GP5=SCL (mbed default pro Pico)
     i2cScan();
     dds.begin();

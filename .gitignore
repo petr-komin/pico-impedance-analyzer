@@ -7,3 +7,7 @@ desktop/*.pyc
 desktop/.venv/
 desktop/To
 desktop/sys
+
+# uzivatelska data (konfigurace rozsahu + SOL kalibrace)
+desktop/config.json
+desktop/calibration.json

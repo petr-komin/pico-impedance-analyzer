@@ -1,29 +1,29 @@
 import numpy as np
 from dataclasses import dataclass, field
 
-
-# AD8302: VMAG 0–1.8 V → 0–60 dB (1 V = 30 dB, slope ~30 mV/dB)
-AD8302_MAG_SLOPE_V_PER_DB = 0.030
-AD8302_MAG_OFFSET_V = 0.0       # 0 V = 0 dB (adjust per board calibration)
-
-# AD8302: VPHS 0–1.8 V → 0°–180°
-AD8302_PHS_SLOPE_V_PER_DEG = 0.010  # 10 mV/deg
-AD8302_PHS_OFFSET_V = 0.0
+# AD8302: VMAG and VPHS are ratiometric to VREF (~1.8 V).
+# VMAG: 0 V → 0 dB, VREF → 60 dB  (slope ~30 mV/dB)
+# VPHS: 0 V → 0°,  VREF → 180°    (slope ~10 mV/°)
 
 
 @dataclass
 class Point:
     freq_hz: int
     vmag_v: float
+    vref_v: float
     vphs_v: float
 
     @property
     def magnitude_db(self) -> float:
-        return (self.vmag_v - AD8302_MAG_OFFSET_V) / AD8302_MAG_SLOPE_V_PER_DB
+        if self.vref_v < 0.1:
+            return 0.0
+        return self.vmag_v / self.vref_v * 60.0
 
     @property
     def phase_deg(self) -> float:
-        return (self.vphs_v - AD8302_PHS_OFFSET_V) / AD8302_PHS_SLOPE_V_PER_DEG
+        if self.vref_v < 0.1:
+            return 0.0
+        return self.vphs_v / self.vref_v * 180.0
 
 
 @dataclass
